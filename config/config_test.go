@@ -293,6 +293,24 @@ concurrent_download_chunk_size = "badchunksize"
 	}
 }
 
+func TestResolverConfigPathFromToml(t *testing.T) {
+	tomlCfg := []byte(`
+[resolver]
+config_path = "/tmp/certs.d"
+`)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, tomlCfg, 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+	actual, err := NewConfigFromToml(path)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if actual.ResolverConfig.ConfigPath != "/tmp/certs.d" {
+		t.Errorf("Expected resolver.config_path to be %q, got %q", "/tmp/certs.d", actual.ResolverConfig.ConfigPath)
+	}
+}
+
 func TestSizeParser(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -94,6 +94,12 @@ enable_keychain = true
 # This tells the SOCI snapshotter where containerd's ImageService is located.
 # The SOCI snapshotter will forward requests here after caching credentials.
 image_service_path="/run/containerd/containerd.sock"
+
+# Optional: Use containerd-style certs.d registry configuration
+[resolver]
+# If set, the snapshotter will use registry host settings from this directory
+# and ignore any per-host settings in this file.
+config_path="/etc/containerd/certs.d"
 ```
 
 **Kubelet Configuration**  

@@ -88,7 +88,15 @@ func NewSociSnapshotterService(ctx context.Context, root string, serviceCfg *con
 
 	hosts := sOpts.registryHosts
 	if hosts == nil {
-		hosts = resolver.NewRegistryManager(httpConfig, registryConfig, sOpts.credsFuncs).AsRegistryHosts()
+		// Use registry config from containerd-style certs.d directory if provided
+		if registryConfig.ConfigPath != "" {
+			criRegistry := resolver.Registry{
+				ConfigPath: registryConfig.ConfigPath,
+			}
+			hosts = resolver.RegistryHostsFromCRIConfig(ctx, criRegistry, sOpts.credsFuncs...)
+		} else {
+			hosts = resolver.NewRegistryManager(httpConfig, registryConfig, sOpts.credsFuncs).AsRegistryHosts()
+		}
 	}
 	userxattr, err := overlayutils.NeedsUserXAttr(snapshotterRoot(root))
 	if err != nil {

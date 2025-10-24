@@ -79,6 +79,8 @@ skip_check_snapshotter_supported = false
   image_service_path = '/run/containerd/containerd.sock'
 
 [resolver]
+  # Optional: Use containerd-style certs.d directory for registry configuration
+  # config_path = "/etc/containerd/certs.d"
 
 [snapshotter]
   min_layer_size = 0
