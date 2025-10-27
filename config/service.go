@@ -45,6 +45,9 @@ type ServiceConfig struct {
 	// CRIKeychainConfig is config for CRI-based keychain.
 	CRIKeychainConfig `toml:"cri_keychain"`
 
+	// RegistryConfig is config for registry settings (matches containerd's naming).
+	RegistryConfig `toml:"registry"`
+
 	// ResolverConfig is config for resolving registries.
 	ResolverConfig `toml:"resolver"`
 
