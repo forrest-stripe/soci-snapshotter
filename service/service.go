@@ -84,11 +84,28 @@ func NewSociSnapshotterService(ctx context.Context, root string, serviceCfg *con
 	}
 
 	httpConfig := serviceCfg.FSConfig.RetryableHTTPClientConfig
-	registryConfig := serviceCfg.ResolverConfig
+	registryConfig := serviceCfg.RegistryConfig // Containerd-standard registry config
+	resolverConfig := serviceCfg.ResolverConfig // Legacy SOCI resolver config
 
 	hosts := sOpts.registryHosts
 	if hosts == nil {
-		hosts = resolver.NewRegistryManager(httpConfig, registryConfig, sOpts.credsFuncs).AsRegistryHosts()
+		// Default to containerd's standard certs.d directory approach.
+		// This ensures parallel pulling works with TLS the same way containerd does.
+		configPath := registryConfig.ConfigPath
+		if configPath == "" {
+			configPath = "/etc/containerd/certs.d"
+		}
+
+		criRegistry := resolver.Registry{
+			ConfigPath: configPath,
+		}
+		hosts = resolver.RegistryHostsFromCRIConfig(ctx, criRegistry, sOpts.credsFuncs...)
+
+		// Only fall back to legacy resolver if explicitly configured with per-host settings
+		// and no certs.d path was specified
+		if len(resolverConfig.Host) > 0 && registryConfig.ConfigPath == "" {
+			hosts = resolver.NewRegistryManager(httpConfig, resolverConfig, sOpts.credsFuncs).AsRegistryHosts()
+		}
 	}
 	userxattr, err := overlayutils.NeedsUserXAttr(snapshotterRoot(root))
 	if err != nil {

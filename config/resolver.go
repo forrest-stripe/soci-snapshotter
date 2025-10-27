@@ -38,6 +38,14 @@
 
 package config
 
+// RegistryConfig is config for registry settings (matches containerd's naming).
+type RegistryConfig struct {
+	// ConfigPath is the root directory containing registry-specific configurations
+	// in containerd's certs.d layout. When set, per-host resolver settings are
+	// ignored in favor of the files in this directory.
+	ConfigPath string `toml:"config_path"`
+}
+
 // ResolverConfig is config for resolving registries.
 type ResolverConfig struct {
 	Host map[string]HostConfig `toml:"host"`
