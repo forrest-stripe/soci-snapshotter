@@ -469,7 +469,9 @@ func (fs *filesystem) preloadAllLayers(ctx context.Context, desc ocispec.Descrip
 		}
 		client := cachedClient
 		if authClient, ok := cachedClient.Transport.(*socihttp.AuthClient); ok {
+			// Clone the retryable client but preserve the underlying Transport (TLS/mTLS config)
 			retryClient := resolver.CloneRetryableClient(authClient.Client())
+			retryClient.HTTPClient.Transport = authClient.Client().HTTPClient.Transport
 			newAuthClient := authClient.CloneWithNewClient(retryClient)
 			newAuthClient.CacheRedirects(true)
 			client = &http.Client{Transport: newAuthClient}
@@ -498,6 +500,8 @@ func (fs *filesystem) preloadAllLayers(ctx context.Context, desc ocispec.Descrip
 	client := cachedClient
 	if authClient, ok := cachedClient.Transport.(*socihttp.AuthClient); ok {
 		retryClient := resolver.CloneRetryableClient(authClient.Client())
+		// Preserve the original HTTP transport to carry TLS settings (certs, client certs, proxies, etc.)
+		retryClient.HTTPClient.Transport = authClient.Client().HTTPClient.Transport
 		// The clone will have a cleaned cache
 		newAuthClient := authClient.CloneWithNewClient(retryClient)
 		// It's worth noting we don't ever directly clear the cache after this.
