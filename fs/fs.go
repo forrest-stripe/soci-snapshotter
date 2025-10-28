@@ -524,26 +524,26 @@ func (fs *filesystem) preloadAllLayers(ctx context.Context, desc ocispec.Descrip
 	imageJob := fs.inProgressImageUnpacks.GetOrAddImageJob(imageDigest, cancel)
 
 	// If we fail anywhere after making the image job, we must remove the associated image job
-    premountAll := func() error {
-        // Prime authorization/redirect caching if we'll use multi-range requests.
-        if fs.inProgressImageUnpacks.imagePullCfg.MaxConcurrentDownloadsPerImage != 1 {
-            if _, err = remoteStore.doInitialFetch(ctx, constructRef(refspec, desc)); err != nil {
-                return fmt.Errorf("error doing initial client fetch: %w", err)
-            }
-        }
+	premountAll := func() error {
+		// Prime authorization/redirect caching if we'll use multi-range requests.
+		if fs.inProgressImageUnpacks.imagePullCfg.MaxConcurrentDownloadsPerImage != 1 {
+			if _, err = remoteStore.doInitialFetch(ctx, constructRef(refspec, desc)); err != nil {
+				return fmt.Errorf("error doing initial client fetch: %w", err)
+			}
+		}
 
-        // Enqueue ALL image layers (independent of the current target) on first prepare.
-        for _, l := range manifest.Layers {
-            if images.IsLayerType(l.MediaType) {
-                layerJob, err := fs.inProgressImageUnpacks.AddLayerJob(imageJob, l.Digest.String())
-                if err != nil {
-                    return fmt.Errorf("error adding layer job: %w", err)
-                }
-                go fs.premount(premountCtx, l, refspec, remoteStore, diffIDMap, layerJob)
-            }
-        }
-        return nil
-    }
+		// Enqueue ALL image layers (independent of the current target) on first prepare.
+		for _, l := range manifest.Layers {
+			if images.IsLayerType(l.MediaType) {
+				layerJob, err := fs.inProgressImageUnpacks.AddLayerJob(imageJob, l.Digest.String())
+				if err != nil {
+					return fmt.Errorf("error adding layer job: %w", err)
+				}
+				go fs.premount(premountCtx, l, refspec, remoteStore, diffIDMap, layerJob)
+			}
+		}
+		return nil
+	}
 
 	if err := premountAll(); err != nil {
 		fs.inProgressImageUnpacks.RemoveImageWithError(imageDigest, err)
