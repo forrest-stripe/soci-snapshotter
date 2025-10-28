@@ -524,35 +524,26 @@ func (fs *filesystem) preloadAllLayers(ctx context.Context, desc ocispec.Descrip
 	imageJob := fs.inProgressImageUnpacks.GetOrAddImageJob(imageDigest, cancel)
 
 	// If we fail anywhere after making the image job, we must remove the associated image job
-	premountAll := func() error {
-		// We only want to premount all layers that don't exist yet.
-		// Since layer order is deterministic, we can safely assume that
-		// every layer after this needs to be premounted as well.
-		startPremounting := false
-		for _, l := range manifest.Layers {
-			if images.IsLayerType(l.MediaType) {
-				if l.Digest.String() == desc.Digest.String() {
-					startPremounting = true
+    premountAll := func() error {
+        // Prime authorization/redirect caching if we'll use multi-range requests.
+        if fs.inProgressImageUnpacks.imagePullCfg.MaxConcurrentDownloadsPerImage != 1 {
+            if _, err = remoteStore.doInitialFetch(ctx, constructRef(refspec, desc)); err != nil {
+                return fmt.Errorf("error doing initial client fetch: %w", err)
+            }
+        }
 
-					// We don't have to preauthorize if we only do one request at a time
-					if fs.inProgressImageUnpacks.imagePullCfg.MaxConcurrentDownloadsPerImage != 1 {
-						_, err = remoteStore.doInitialFetch(ctx, constructRef(refspec, desc))
-						if err != nil {
-							return fmt.Errorf("error doing initial client fetch: %w", err)
-						}
-					}
-				}
-				if startPremounting {
-					layerJob, err := fs.inProgressImageUnpacks.AddLayerJob(imageJob, l.Digest.String())
-					if err != nil {
-						return fmt.Errorf("error adding layer job: %w", err)
-					}
-					go fs.premount(premountCtx, l, refspec, remoteStore, diffIDMap, layerJob)
-				}
-			}
-		}
-		return nil
-	}
+        // Enqueue ALL image layers (independent of the current target) on first prepare.
+        for _, l := range manifest.Layers {
+            if images.IsLayerType(l.MediaType) {
+                layerJob, err := fs.inProgressImageUnpacks.AddLayerJob(imageJob, l.Digest.String())
+                if err != nil {
+                    return fmt.Errorf("error adding layer job: %w", err)
+                }
+                go fs.premount(premountCtx, l, refspec, remoteStore, diffIDMap, layerJob)
+            }
+        }
+        return nil
+    }
 
 	if err := premountAll(); err != nil {
 		fs.inProgressImageUnpacks.RemoveImageWithError(imageDigest, err)
