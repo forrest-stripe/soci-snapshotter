@@ -9,12 +9,16 @@ However, some users prefer the traditional upfront loading model, where the enti
 To support users who favor the upfront loading workflow, we have introduced a new _parallel-pull-unpack_ mode in the SOCI Snapshotter. This mode enables concurrent processing of container image layers, significantly improving the performance of the upfront loading process.
 
 ## Functionality
- 
+
 The _parallel-pull-unpack_ mode operates as follows:
 
 * Parallel Layer Downloads: When preparing a container image snapshot, the snapshotter initiates concurrent HTTP range GET requests to fetch the individual image layers. Each layer is downloaded in parallel using multiple HTTP connections, with the downloaded data being written to a temporary file on disk rather than buffered in memory.
 
 * Parallel Layer Unpacking: After the layers are downloaded, the snapshotter also launches parallel unpacking operations. Multiple layers can be decompressed and extracted concurrently.
+
+## Startup behavior
+
+As of v0.12.1, if the image manifest and config are not yet present in containerd’s content store when the snapshot is prepared, the snapshotter will fetch them directly from the registry. This avoids waiting on containerd’s ingestion path and allows parallel downloads to start immediately. If the manifest/config are already present, the snapshotter continues to use the content store as before.
 
 ## Use Cases
 
@@ -68,7 +72,7 @@ Here's a sample configuration that demonstrates how to set up the _parallel-pull
   max_concurrent_unpacks = 20
   max_concurrent_unpacks_per_image = 10
   discard_unpacked_layers = true
-  
+
   [pull_modes.parallel_pull_unpack.decompress_streams."gzip"]
     path = "/usr/bin/unpigz"
     args = ["-d", "-c"]

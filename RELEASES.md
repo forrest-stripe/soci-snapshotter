@@ -22,26 +22,36 @@ This policy will be changed once SOCI reaches v1.0.0.
 
 ## Releases
 
+### v0.12.2
+
+Improvements
+
+- Parallel Pull/Unpack: Eliminate ~60–70s startup delay before downloads begin when using containerd with parallel pull/unpack. The snapshotter now falls back to fetching the image manifest and config directly from the registry if they are not yet present in containerd's content store at prepare time. This allows diffID mapping to be computed immediately and parallel downloads to start right away.
+
+Notes
+
+- Default concurrency remains unchanged (3 per-image downloads, 1 per-image unpack). You can tune these under `[pull_modes.parallel_pull_unpack]`.
+
 Releases are made through [GitHub Releases](https://github.com/awslabs/soci-snapshotter/releases). If there is demand, we will consider creating official linux packages for various distributions.
 
 
 ### Major Version Releases (branch: `main`)
 
-Major versions are developed on the main branch. 
+Major versions are developed on the main branch.
 
-When the time comes to release a new major version, a new `release/Major.0` branch will be created following the same process used for minor releases. 
+When the time comes to release a new major version, a new `release/Major.0` branch will be created following the same process used for minor releases.
 
 ### Minor Version Releases (branch: `main`)
 
-Minor versions are developed on the main branch. 
+Minor versions are developed on the main branch.
 
 When the time comes to release a new minor version, a new `release/Major.Minor` branch will be created from the tip of main. Once the new branch has been created, a new `vMajor.Minor.0` tag will be created following the process used for patch releases.
 
 ### Patch Version Releases (branch: `release/Major.Minor`)
 
-Patch versions are developed after the initial minor version tag in the `release/Major.Minor` branch to which they belong. Patch releases are used for security fixes and major or widespread bug fixes. Patch releases will not include new features. 
+Patch versions are developed after the initial minor version tag in the `release/Major.Minor` branch to which they belong. Patch releases are used for security fixes and major or widespread bug fixes. Patch releases will not include new features.
 
-When the time comes to release a new patch version, a new commit will be added to the `release/Major.Minor` branch to add any necessary release artifacts (e.g. a finalized copy of third party licenses, finalized change log, etc), and a new `vMajor.Minor.Patch` tag will be created from that commit. 
+When the time comes to release a new patch version, a new commit will be added to the `release/Major.Minor` branch to add any necessary release artifacts (e.g. a finalized copy of third party licenses, finalized change log, etc), and a new `vMajor.Minor.Patch` tag will be created from that commit.
 
 Once the tag is created, a release will automatically be added to github with the same `vMajor.Minor.Patch` version scheme containing the release artifacts. For a full list of artifacts contained in the release, see [Release Artifacts](#release-artifacts).
 
@@ -60,19 +70,19 @@ Semantic Versioning expects minor versions to contain only backwards-compatible,
 
 ### zTOC data format
 
-The zTOC data format is the serialized form of a zTOC. Since zTOCs will be stored in registries and registries are content addressable, we don't anticipate many changes to the zTOC format. 
+The zTOC data format is the serialized form of a zTOC. Since zTOCs will be stored in registries and registries are content addressable, we don't anticipate many changes to the zTOC format.
 
 ### zTOC API
 
-The zTOC API is the portion of the SOCI library used for creating and working with zTOCs. 
+The zTOC API is the portion of the SOCI library used for creating and working with zTOCs.
 
 ### SOCI API
 
-The SOCI API is the portion of the SOCI library used for creating and interacting with SOCI indices. 
+The SOCI API is the portion of the SOCI library used for creating and interacting with SOCI indices.
 
 ### SOCI CLI
 
-The SOCI CLI (`bin/soci`) is the binary that can be used to create and inspect SOCI indicies and zTOCs. 
+The SOCI CLI (`bin/soci`) is the binary that can be used to create and inspect SOCI indicies and zTOCs.
 
 
 ## Release Artifacts
@@ -91,18 +101,18 @@ Source code (zip)
 Source code (tar.gz)
 ```
 
-Each release tarball contains the following: 
+Each release tarball contains the following:
 ```
 soci-snapshotter-grpc
 soci
 THIRD_PARTY_LICENSES
 NOTICE.md
 ```
- 
+
 
 ## Next Release / Release Cadence
 
 The next release is tracked via [GitHub milestones](https://github.com/awslabs/soci-snapshotter/milestones).
 
-The SOCI project doesn’t follow any fixed release cadence. 
+The SOCI project doesn’t follow any fixed release cadence.
 
