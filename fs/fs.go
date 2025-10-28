@@ -56,7 +56,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/awslabs/soci-snapshotter/config"
@@ -90,6 +89,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/semaphore"
+	"golang.org/x/sys/unix"
 	orasremote "oras.land/oras-go/v2/registry/remote"
 )
 
@@ -455,13 +455,38 @@ func (fs *filesystem) MountParallel(ctx context.Context, mountpoint string, labe
 }
 
 func (fs *filesystem) preloadAllLayers(ctx context.Context, desc ocispec.Descriptor, imageDigest string, refspec reference.Spec, cachedClient *http.Client) error {
+	// Try reading manifest/config from containerd's content store first.
 	manifest, err := fs.getImageManifest(ctx, imageDigest)
-	if err != nil {
-		return fmt.Errorf("cannot get image manifest: %w", err)
+	var diffIDMap map[string]digest.Digest
+	if err == nil {
+		diffIDMap, err = fs.getDiffIDMap(ctx, manifest)
 	}
-	diffIDMap, err := fs.getDiffIDMap(ctx, manifest)
 	if err != nil {
-		return fmt.Errorf("error getting uncompressed shasums for image %s: %v", desc.Digest, err)
+		// Fall back to fetching manifest/config directly from the remote registry
+		ns, ok := namespaces.Namespace(ctx)
+		if !ok {
+			return errors.New("namespace not attached to context")
+		}
+		client := cachedClient
+		if authClient, ok := cachedClient.Transport.(*socihttp.AuthClient); ok {
+			retryClient := resolver.CloneRetryableClient(authClient.Client())
+			newAuthClient := authClient.CloneWithNewClient(retryClient)
+			newAuthClient.CacheRedirects(true)
+			client = &http.Client{Transport: newAuthClient}
+		}
+		remoteBlobStore, rErr := newRemoteBlobStore(refspec, client)
+		if rErr != nil {
+			return fmt.Errorf("cannot create remote store: %w", rErr)
+		}
+		ctxWithNS := namespaces.WithNamespace(context.Background(), ns)
+		manifest, rErr = fs.getImageManifestFromRemote(ctxWithNS, remoteBlobStore.Repository, imageDigest)
+		if rErr != nil {
+			return fmt.Errorf("cannot get image manifest: %w", rErr)
+		}
+		diffIDMap, rErr = fs.getDiffIDMapFromRemote(ctxWithNS, remoteBlobStore.Repository, manifest)
+		if rErr != nil {
+			return fmt.Errorf("error getting uncompressed shasums for image %s: %v", desc.Digest, rErr)
+		}
 	}
 
 	ns, ok := namespaces.Namespace(ctx)
@@ -704,6 +729,61 @@ func (fs *filesystem) getImageManifest(ctx context.Context, dgst string) (*ocisp
 	}
 
 	return &manifest, nil
+}
+
+// getImageManifestFromRemote fetches a manifest from a remote registry using an ORAS repository client.
+func (fs *filesystem) getImageManifestFromRemote(ctx context.Context, remoteStore *orasremote.Repository, dgst string) (*ocispec.Manifest, error) {
+	// Build a reference for the manifest digest and fetch it
+	d, err := digest.Parse(dgst)
+	if err != nil {
+		return nil, err
+	}
+	ref := remoteStore.Reference
+	ref.Reference = d.String()
+	_, r, err := remoteStore.Manifests().FetchReference(ctx, ref.Reference)
+	if err != nil {
+		return nil, fmt.Errorf("could not fetch manifest: %w", err)
+	}
+	defer r.Close()
+
+	var manifest ocispec.Manifest
+	if err := json.NewDecoder(r).Decode(&manifest); err != nil {
+		return nil, fmt.Errorf("could not unmarshal manifest: %w", err)
+	}
+	return &manifest, nil
+}
+
+// getDiffIDMapFromRemote fetches the image config from a remote registry and returns the compressed->uncompressed digest map.
+func (fs *filesystem) getDiffIDMapFromRemote(ctx context.Context, remoteStore *orasremote.Repository, imageManifest *ocispec.Manifest) (map[string]digest.Digest, error) {
+	// Fetch image config blob
+	// The Manifests() API is for manifests; for blobs, use Blobs().Fetch directly with the descriptor
+	rc, err := remoteStore.Blobs().Fetch(ctx, imageManifest.Config)
+	if err != nil {
+		return nil, fmt.Errorf("could not fetch image config: %w", err)
+	}
+	defer rc.Close()
+
+	buf, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, err
+	}
+
+	imgConfig := ocispec.Image{}
+	if err := json.Unmarshal(buf, &imgConfig); err != nil {
+		return nil, fmt.Errorf("error unmarshalling image config JSON: %v", err)
+	}
+
+	uncompressedShas := imgConfig.RootFS.DiffIDs
+	compressedShas := imageManifest.Layers
+	if len(uncompressedShas) != len(compressedShas) {
+		return nil, fmt.Errorf("mismatch between manifest layers and diff IDs")
+	}
+
+	diffIDMap := map[string]digest.Digest{}
+	for i := range len(uncompressedShas) {
+		diffIDMap[compressedShas[i].Digest.String()] = uncompressedShas[i]
+	}
+	return diffIDMap, nil
 }
 
 // CleanImage stops all parallel operations for the specific image.
@@ -1238,7 +1318,7 @@ func (fs *filesystem) Unmount(ctx context.Context, mountpoint string) error {
 	// In the future, we might be able to consider to kill that specific hanging
 	// goroutine using channel, etc.
 	// See also: https://www.kernel.org/doc/html/latest/filesystems/fuse.html#aborting-a-filesystem-connection
-	return syscall.Unmount(mountpoint, syscall.MNT_FORCE)
+	return unix.Unmount(mountpoint, unix.MNT_FORCE)
 }
 
 // neighboringLayers returns layer descriptors except the `target` layer in the specified manifest.
