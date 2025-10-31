@@ -26,7 +26,7 @@ This policy will be changed once SOCI reaches v1.0.0.
 
 Improvements
 
-- Parallel Pull/Unpack: Eliminate ~60–70s startup delay before downloads begin when using containerd with parallel pull/unpack. The snapshotter now falls back to fetching the image manifest and config directly from the registry if they are not yet present in containerd's content store at prepare time. This allows diffID mapping to be computed immediately and parallel downloads to start right away.
+- Parallel Pull/Unpack: Eliminate startup delays before downloads begin when using containerd with parallel pull/unpack. The snapshotter now falls back to fetching the image manifest and config directly from the registry if they are not yet present in containerd's content store at prepare time. This allows diffID mapping to be computed immediately and parallel downloads to start right away.
 
 Notes
 
