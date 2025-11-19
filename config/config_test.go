@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 func TestConfigDefaults(t *testing.T) {
@@ -327,5 +329,50 @@ func TestSizeParser(t *testing.T) {
 				t.Errorf("Expected %d, got %d for input %q", test.expected, actual, test.input)
 			}
 		})
+	}
+}
+
+func TestRegistryConfigParsing(t *testing.T) {
+	// Test case 1: Verify that RegistryConfig can be parsed from TOML
+	tomlData := `
+[registry]
+  config_path = "/etc/containerd/certs.d"
+
+[resolver]
+  [resolver.host."docker.io"]
+    mirrors = [{ host = "mirror.registry" }]
+`
+	var cfg ServiceConfig
+	if _, err := toml.Decode(tomlData, &cfg); err != nil {
+		t.Fatalf("failed to decode TOML: %v", err)
+	}
+
+	// Check RegistryConfig
+	if cfg.RegistryConfig.ConfigPath != "/etc/containerd/certs.d" {
+		t.Errorf("expected config_path to be /etc/containerd/certs.d, got %q", cfg.RegistryConfig.ConfigPath)
+	}
+
+	// Check Legacy ResolverConfig is also parsed (for backward compatibility)
+	if len(cfg.ResolverConfig.Host) != 1 {
+		t.Errorf("expected 1 host in resolver config, got %d", len(cfg.ResolverConfig.Host))
+	}
+	if _, ok := cfg.ResolverConfig.Host["docker.io"]; !ok {
+		t.Error("expected docker.io in resolver config")
+	}
+}
+
+func TestRegistryConfigDefaults(t *testing.T) {
+	// Test case 2: Verify defaults when no registry config is provided
+	tomlData := `
+[fs]
+  type = "btrfs"
+`
+	var cfg ServiceConfig
+	if _, err := toml.Decode(tomlData, &cfg); err != nil {
+		t.Fatalf("failed to decode TOML: %v", err)
+	}
+
+	if cfg.RegistryConfig.ConfigPath != "" {
+		t.Errorf("expected empty config_path by default, got %q", cfg.RegistryConfig.ConfigPath)
 	}
 }
