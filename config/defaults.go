@@ -47,6 +47,7 @@ const (
 // ServiceConfig defaults
 const (
 	DefaultImageServiceAddress = "/run/containerd/containerd.sock"
+	DefaultCertsDPath          = "/etc/containerd/certs.d"
 )
 
 // ParallelPullUnpack defaults

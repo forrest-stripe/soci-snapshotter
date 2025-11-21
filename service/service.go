@@ -93,7 +93,7 @@ func NewSociSnapshotterService(ctx context.Context, root string, serviceCfg *con
 		// This ensures parallel pulling works with TLS the same way containerd does.
 		configPath := registryConfig.ConfigPath
 		if configPath == "" {
-			configPath = "/etc/containerd/certs.d"
+			configPath = config.DefaultCertsDPath
 		}
 
 		criRegistry := resolver.Registry{
@@ -104,6 +104,7 @@ func NewSociSnapshotterService(ctx context.Context, root string, serviceCfg *con
 		// Only fall back to legacy resolver if explicitly configured with per-host settings
 		// and no certs.d path was specified
 		if len(resolverConfig.Host) > 0 && registryConfig.ConfigPath == "" {
+			log.G(ctx).Warn("using legacy [resolver.host] configuration which is deprecated; please migrate to [registry.config_path] pointing to containerd-style certs.d directory")
 			hosts = resolver.NewRegistryManager(httpConfig, resolverConfig, sOpts.credsFuncs).AsRegistryHosts()
 		}
 	}
