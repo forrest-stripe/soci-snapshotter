@@ -25,7 +25,9 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
+	"strings"
 
 	sociremote "github.com/awslabs/soci-snapshotter/fs/remote"
 	socihttp "github.com/awslabs/soci-snapshotter/internal/http"
@@ -75,8 +77,8 @@ type orasBlobStore struct {
 	*remote.Repository
 }
 
-func newRemoteBlobStore(refspec reference.Spec, client *http.Client) (*orasBlobStore, error) {
-	repo, err := newRemoteStore(refspec, client)
+func newRemoteBlobStore(refspec reference.Spec, client *http.Client, hosts []docker.RegistryHost) (*orasBlobStore, error) {
+	repo, err := newRemoteStore(refspec, client, hosts)
 	if err != nil {
 		return nil, fmt.Errorf("cannot create remote store: %w", err)
 	}
@@ -96,7 +98,7 @@ func (r *orasBlobStore) Resolve(ctx context.Context, reference string) (ocispec.
 	}
 
 	tr := &clientWrapper{r.Client}
-	url := sociremote.CraftBlobURL(reference, ref)
+	url := r.buildBlobURL(ref.Reference)
 	resp, err := sociremote.GetHeader(ctx, url, tr)
 	if err != nil {
 		return ocispec.Descriptor{}, err
@@ -164,7 +166,7 @@ func (r *orasBlobStore) FetchRange(ctx context.Context, reference string, lower,
 	}
 
 	tr := &clientWrapper{r.Client}
-	realURL := sociremote.CraftBlobURL(reference, ref)
+	realURL := r.buildBlobURL(ref.Reference)
 	resp, err := GetContentWithRange(ctx, realURL, tr, lower, upper)
 	if err != nil {
 		return nil, cleanFetchErrors(err)
@@ -203,7 +205,7 @@ func (r *orasBlobStore) doInitialFetch(ctx context.Context, reference string) (b
 	}
 
 	tr := &clientWrapper{r.Client}
-	url := sociremote.CraftBlobURL(reference, ref)
+	url := r.buildBlobURL(ref.Reference)
 	resp, err := sociremote.GetHeaderWithGet(ctx, url, tr)
 	if err != nil {
 		return false, fmt.Errorf("error getting header info: %v", err)
@@ -218,6 +220,22 @@ func (r *orasBlobStore) doInitialFetch(ctx context.Context, reference string) (b
 	return false, nil
 }
 
+// buildBlobURL constructs a mirror-aware blob URL.
+// It takes the digest reference string and builds the full URL using the repository's
+// host/repo (which may be a mirror) and the appropriate scheme (http/https).
+func (r *orasBlobStore) buildBlobURL(digestRef string) string {
+	// Copy the repository reference and set the digest
+	repoRef := r.Repository.Reference
+	repoRef.Reference = digestRef
+	
+	scheme := "https"
+	if r.Repository.PlainHTTP {
+		scheme = "http"
+	}
+	
+	return fmt.Sprintf("%s://%s/v2/%s/blobs/%s", scheme, repoRef.Host(), repoRef.Repository, repoRef.Reference)
+}
+
 // This wrapper is to allow a [remote.Client] to implement the
 // [http.RoundTripper] interface by calling Client.Do() in place of RoundTrip.
 type clientWrapper struct {
@@ -228,16 +246,39 @@ func (c *clientWrapper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return c.Client.Do(req)
 }
 
-func newRemoteStore(refspec reference.Spec, client *http.Client) (*remote.Repository, error) {
-	repo, err := remote.NewRepository(refspec.Locator)
+func newRemoteStore(refspec reference.Spec, client *http.Client, hosts []docker.RegistryHost) (*remote.Repository, error) {
+	// Default to the original locator
+	mirrorLocator := refspec.Locator
+	plainHTTP := false
+
+	// If registry hosts are provided (e.g., from containerd certs.d/hosts.toml),
+	// construct a mirror-aware locator and scheme.
+	if len(hosts) > 0 {
+		// Currently, we only use the first configured host/mirror.
+		// Future improvement: implement failover logic if the first mirror is unreachable.
+		h := hosts[0]
+		// repository suffix excludes the original hostname
+		repoSuffix := strings.TrimPrefix(refspec.Locator, refspec.Hostname()+"/")
+		// Do NOT include h.Path (e.g., /v2) in the repository locator
+		mirrorLocator = path.Join(h.Host, repoSuffix)
+		if h.Scheme == "http" {
+			plainHTTP = true
+		}
+	} else {
+		// Fallback: plain HTTP only for localhost
+		var err error
+		plainHTTP, err = docker.MatchLocalhost(refspec.Hostname())
+		if err != nil {
+			return nil, fmt.Errorf("cannot determine http/https for %s: %w", refspec.Locator, err)
+		}
+	}
+
+	repo, err := remote.NewRepository(mirrorLocator)
 	if err != nil {
-		return nil, fmt.Errorf("cannot create repository %s: %w", refspec.Locator, err)
+		return nil, fmt.Errorf("cannot create repository %s: %w", mirrorLocator, err)
 	}
 	repo.Client = client
-	repo.PlainHTTP, err = docker.MatchLocalhost(refspec.Hostname())
-	if err != nil {
-		return nil, fmt.Errorf("cannot create repository %s: %w", refspec.Locator, err)
-	}
+	repo.PlainHTTP = plainHTTP
 
 	return repo, nil
 }
